@@ -1,4 +1,6 @@
 #include "systemcalls.h"
+#include <errno.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,6 +18,14 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    if(system(cmd) == 0)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 
     return true;
 }
@@ -59,9 +69,27 @@ bool do_exec(int count, ...)
  *
 */
 
-    va_end(args);
+    // Fork a child process
+    pid_t proc = fork();
 
-    return true;
+    if (proc < 0) {
+        perror("fork failed");
+        return false;
+    } 
+    else if (proc == 0) {  // Child process
+        execv(command[0], command);
+        perror("Execution failed...");
+        exit(EXIT_FAILURE);  // Exit child process on failure
+    } 
+    else {  // Parent process
+        int status;
+        wait(&status);  // Wait for child to complete
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status) == 0;  // Return true if child exited successfully
+        } else {
+            return false;  // Child did not exit normally
+        }
+    }
 }
 
 /**
@@ -92,7 +120,41 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int rd_pid = fork();
+    int rd_file = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if(rd_pid < 0)
+    {
+        perror("Erron in opening file...");
+        exit(EXIT_FAILURE);
+    }
 
+    if(rd_pid > 0)
+    {
+        int status;
+        wait(&status);
+    }
+    else if(rd_pid == 0)
+    {
+        if (dup2(rd_file, STDOUT_FILENO) < 0) 
+        {
+            perror("Error redirecting stdout");
+            close(rd_file);  // Close the file descriptor
+            exit(EXIT_FAILURE);  // Exit child process on failure
+        }
+        close(rd_file);
+        execv(command[0], command);
+        perror("Execution failed...");
+        return false;
+    }
+    else {  // Parent process
+        int status;
+        wait(&status);  // Wait for child to complete
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status) == 0;  // Return true if child exited successfully
+        } else {
+            return false;  // Child did not exit normally
+        }
+    }
     va_end(args);
 
     return true;
